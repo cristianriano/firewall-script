@@ -1,0 +1,90 @@
+#! /bin/sh
+### BEGIN INIT INFO
+#Provides:		Firewall and Natconfiguration
+#Required-Start:	$syslog $networking
+#Required-Stop:		$syslog
+#Default-Start:		2 3 4 5
+#Default-Stop:		0 1 6
+#Short-Description:	Iptables configuration
+#Description:
+#
+### END INIT INFO
+
+#Habilitamos el enrutamiento atraves del firewall
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+#Eliminamos reglas previas
+iptables -t filter -F
+iptables -t nat -F
+
+#Cambiar politicas por defecto
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+
+#Se deja el localhost
+iptables -A INPUT -i lo -j ACCEPT
+
+#Enmascarar ip privadas de la red 1 (Zona militarizada)
+iptables -t nat -A POSTROUTING -o eth2 -s 192.168.1.0/24 -j MASQUERADE
+
+#DMZ
+
+#Se redirige el trafico entrante al servidor web (http, https y ftp)
+iptables -t nat -A PREROUTING -i eth2 -p tcp --dport 443 -j DNAT --to 192.168.2.2:443
+iptables -t nat -A PREROUTING -i eth2 -p tcp --dport 80 -j DNAT --to 192.168.2.2:80
+iptables -t nat -A PREROUTING -i eth2 -p tcp --dport 20 -j DNAT --to 192.168.2.2:20
+iptables -t nat -A PREROUTING -i eth2 -p tcp --dport 21 -j DNAT --to 192.168.2.2:21
+
+#Se le da salida al servidor web
+iptables -t nat -A POSTROUTING -s 192.168.2.2 -j MASQUERADE
+
+#Se habilita el trafico del servidor web por los puertos 80 y 443
+iptables -A FORWARD -d 192.168.2.2 -p tcp --dport 80 -j ACCEPT
+iptables -A FORWARD -s 192.168.2.2 -p tcp --sport 80 -j ACCEPT
+iptables -A FORWARD -d 192.168.2.2 -p tcp --dport 443 -j ACCEPT
+iptables -A FORWARD -s 192.168.2.2 -p tcp --sport 443 -j ACCEPT
+
+#Trafico FTP
+iptables -A FORWARD -i eth1 -s 192.168.2.2 -p tcp --sport 20 -j ACCEPT
+iptables -A FORWARD -d 192.168.2.2 -p tcp --dport 20 -j ACCEPT
+iptables -A FORWARD -i eth1 -s 192.168.2.2 -p tcp --sport 21 -j ACCEPT
+iptables -A FORWARD -d 192.168.2.2 -p tcp --dport 21 -j ACCEPT
+
+#LAN interna
+
+#Habilitamos el servidor SSH solo para el Usuario administrador
+iptables -A INPUT -i eth0 -s 192.168.1.10 -p tcp --dport 22 -j ACCEPT
+iptables -A OUTPUT -o eth0 -d 192.168.1.10 -p tcp --sport 22 -j ACCEPT
+
+#Bloquear Twitter y Unicauca
+#Facebook
+iptables -A FORWARD -i eth0 -s 192.168.1.0/24 -d 31.13.73.1 -j REJECT
+iptables -A FORWARD -o eth0 -d 192.168.1.0/24 -s 31.13.73.1 -j REJECT
+#Unicauca
+iptables -A FORWARD -o eth0 -d 192.168.1.0/24 -s 190.5.200.232 -j REJECT
+iptables -A FORWARD -i eth0 -s 192.168.1.0/24 -d 190.5.200.232 -j REJECT
+
+#DNS (TCP y UDP)
+iptables -A FORWARD -i eth0 -s 192.168.1.0/24 -p tcp --dport 53 -j ACCEPT
+iptables -A FORWARD -o eth0 -d 192.168.1.0/24 -p tcp --sport 53 -j ACCEPT
+
+iptables -A FORWARD -i eth0 -s 192.168.1.0/24 -p udp --dport 53 -j ACCEPT
+iptables -A FORWARD -o eth0 -d 192.168.1.0/24 -p udp --sport 53 -j ACCEPT
+
+#Navegacion de paginas HTTP y HTTPS
+iptables -A FORWARD -i eth0 -s 192.168.1.0/24 -p tcp --dport 80 -j ACCEPT
+iptables -A FORWARD -o eth0 -d 192.168.1.0/24 -p tcp --sport 80 -j ACCEPT
+
+iptables -A FORWARD -i eth0 -s 192.168.1.0/24 -p tcp --dport 443 -j ACCEPT
+iptables -A FORWARD -o eth0 -d 192.168.1.0/24 -p tcp --sport 443 -j ACCEPT
+
+#Ping (solo usuario adminsitrador)
+iptables -A INPUT -i eth0 -s 192.168.1.10 -p icmp --icmp-type echo-request -j ACCEPT
+iptables -A OUTPUT -o eth0 -d 192.168.1.10 -p icmp --icmp-type echo-reply -j ACCEPT
+
+
+
+
+
+
